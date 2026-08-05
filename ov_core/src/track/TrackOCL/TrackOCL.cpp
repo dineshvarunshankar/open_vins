@@ -986,6 +986,25 @@ void TrackOCL::perform_matching(modal_flow::BufferId buf0, modal_flow::BufferId 
             keep_idx.push_back((int)i);
         }
     }
+    // TrackOCL checks it has at least 10 points before following them into the
+    // next frame, but points are always lost along the way -- in low light, in
+    // fast motion, or against blank surfaces. Whatever is left is handed to
+    // OpenCV's findFundamentalMat, which throws error if given too few. Nothing
+    // catches it, so the whole process aborts.
+
+    // Seen on a Starling 2 (VOXL2, voxl-open-vins-server 0.6.0): repeated
+    // SIGABRT with "The input arrays should be 2D or 3D point sets in function
+    // 'findFundamentalMat'", every few seconds in a low-texture scene, taking
+    // VIO down with it.
+
+    // Check the count again after tracking, before the call. If fewer than 10
+    // survived, mark them all rejected and return -- same as the
+    // existing pre-tracking guard does. One frame is skipped instead of the
+    // process dying.
+    if (pts0_keep.size() < 10) {
+        mask_out.assign(pts0.size(), (uchar)0);
+        return;
+    }
 
     // Normalize these points, so we can then do ransac
     // We don't want to do ransac on distorted image uvs since the mapping is nonlinear
